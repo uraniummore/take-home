@@ -15,7 +15,7 @@ The task says "use your best judgement" for any missing context. Therefore, ther
 
     **Assumption**: The author likely wants me to first create the DB, and then migrate a new table for the payment.
 
-2. In this task, I will not necessarily use all the tables from `quickstart.sql`. Therefore, to keep it simple, I won't be mapping all of them to Alchemy models. This, in turn, means that when I do map the ones I need, Alembic's autogenerate will propse a drop_table for the tables that exist in the database, but not in my models.
+2. In this task, I will not necessarily use all the tables from `quickstart.sql`. Therefore, to keep it simple, I won't be mapping all of them to Alchemy models. This, in turn, means that when I do map the ones I need, Alembic's autogenerate will propose a drop_table for the tables that exist in the database, but not in my models.
 
     **Decision**: I will write the `payments` migration by hand.
 
@@ -37,7 +37,7 @@ The task says "use your best judgement" for any missing context. Therefore, ther
 
     How payments work:
 
-    1. Stripe, Ayden or whatever payment provider stored the card and gave me a token, which is the `provider_token` column. To charge the card, I send the provider the token, the amount, and the currency.
+    1. Stripe, Adyen or whatever payment provider stored the card and gave me a token, which is the `provider_token` column. To charge the card, I send the provider the token, the amount, and the currency.
     2. The provider then replies in one of these ways:
         
         - Succeeded. Money taken, I get a charge ID.
@@ -64,11 +64,11 @@ The task says "use your best judgement" for any missing context. Therefore, ther
 
     ```
     id: UUID - The primary key. It's what I'll send as the idempotency key to the provider.
-    card_id - This is the cart I am charging for.
+    cart_id - This is the cart I am charging for.
     payment_method_id - This is the card I am charging.
     amount: NUMERIC(12,2), CHECK > 0 - How much I need to charge.
-    curreny: CHAR(3) - The currency of the amount.
-    status - How my payment went: pending, succeeded or failed, enforced with a CHEK constraint.
+    currency: CHAR(3) - The currency of the amount.
+    status - How my payment went: pending, succeeded or failed, enforced with a CHECK constraint.
     provider_charge_id - The provider's charge ID, it's empty until the charge succeeds.
     failure_reason - Why the payment failed, for instance "card_expired".
     created_at, updated_at - Timestamps, as per base schema.
@@ -82,13 +82,13 @@ The task says "use your best judgement" for any missing context. Therefore, ther
 
     Researching the topic, I found out that the obvious check to "look for an active payment, and add one if there isn't any" breaks when several requests arrive together. Both could find no active payment, because neither inserted anything yet, so both insert their rows, and the customer is charged twice.
 
-7. I noticed the NUMERIC(12, 2) priЁces on products. That means in theory we couldn't charge a cart with a total larger than ~9.9 billion. However, in practice, no card providers allow charges of such scale anyway, with most of them being capped at thousands to tens of thousands of USD. I'm using the same constraint for my Payments table. 
+7. I noticed the NUMERIC(12, 2) prices on products. That means in theory we couldn't charge a cart with a total larger than ~9.9 billion. However, in practice, no card providers allow charges of such scale anyway, with most of them being capped at thousands to tens of thousands of USD. I'm using the same constraint for my Payments table. 
 
-    I did a bit of research, and found out that if I ever need to change this, a one-lin migration, such as `ALTER COLUMN amount TYPE NUMERIC(14, 2)` fixes it, since widening a `NUMERIC` doesn't lose data.
+    I did a bit of research, and found out that if I ever need to change this, a one-line migration, such as `ALTER COLUMN amount TYPE NUMERIC(14, 2)` fixes it, since widening a `NUMERIC` doesn't lose data.
 
 8. So it's finally time to make a mock provider. What I'm thinking here: it's in the name - "mock". I'm guessing I'll just literally make a "provider" endpoint, or even just a function, which will return some response-like data for my service to work with.
 
-    It'll do what is written in [TASK.md](TASK.md): fail or succeed. Howver, there's this third scenario, where the provider didn't answer due to unknown reasons. Handling that means the payment is left pending, and we'd check later. This is out of scope here.
+    It'll do what is written in [TASK.md](TASK.md): fail or succeed. However, there's this third scenario, where the provider didn't answer due to unknown reasons. Handling that means the payment is left pending, and we'd check later. This is out of scope here.
 
     Same goes for refunds, 3D secure, and partial captures.
 
@@ -100,7 +100,7 @@ The task says "use your best judgement" for any missing context. Therefore, ther
 
 11. `payments/service.py`, I am loading the default card with `limit(1)`, and `.scalars().first()`, because the current schema allows for multiple default cards.
 
-12. I made the payment service throw exceptions when something goes wrong, because that immediately rolls back the session, and nothing unexpected gets writted into the DB.
+12. I made the payment service throw exceptions when something goes wrong, because that immediately rolls back the session, and nothing unexpected gets written into the DB.
 
 13. Now that I'm done with the payment service, it is time to create the endpoint. First of all, since the app has neither authentication nor authorization, the endpoint is going to assume that the cart's owner is our user, and therefore there is no `user_id` in the parameters. What I do need is `cart_id`, which is the cart to charge. It is a mandatory parameter, and if it's missing, or is an invalid UUID value, that's a 400. We also have a `payment_method_id`, which isn't required (because the user has a default card, or rather - could have it), although it will still return a 400, if it's an invalid UUID.
 
@@ -122,17 +122,17 @@ The task says "use your best judgement" for any missing context. Therefore, ther
 
     500 is for anything else, including a cart whose total is 0.00. That fails the database check and is not a duplicate payment, so it is not turned into a 409.
 
-14. What test suite should I use? I dug around some, and realised that unittest wouldn't cut it here, or rather it wouldn't be the best solution. Its setup lives in setUp and setUpClass, and it gets sketchy when a test needs both a migrated Postgres, and a test client. Also `parametrize`. Without it, I'd have to repeat myself, copying the same test with different parametres, or write crutches inside the test itself, with loops and whatnot.
+14. What test suite should I use? I dug around some, and realised that unittest wouldn't cut it here, or rather it wouldn't be the best solution. Its setup lives in setUp and setUpClass, and it gets sketchy when a test needs both a migrated Postgres, and a test client. Also `parametrize`. Without it, I'd have to repeat myself, copying the same test with different parameters, or write crutches inside the test itself, with loops and whatnot.
 
     So exactly what scenarios should I test for? We have: every exception I added, a successful payment, a failed payment, and... I think that's about it, honestly.
 
     Wait, no there's more.
     
-    Tests should also have their own database, and load `quickstart.sql` into it, so it's independed, and also covers the fact that the seed itself loads, and migrations work. I shall build each test's own user, cart, items and the payment token.
+    Tests should also have their own database, and load `quickstart.sql` into it, so it's independent, and also covers the fact that the seed itself loads, and migrations work. I shall build each test's own user, cart, items and the payment token.
 
     Also, I need to test when the request is rejected before the service runs, and no payment row is created. Missing body, body that isn't JSON, missing cart_id, weird payment_id, the works. That's probably it.
 
-    Wait, no - if I change products.price before paying, the amount charged should stay at cart_items.unit_rice, that's literally one of the points I made earlier.
+    Wait, no - if I change products.price before paying, the amount charged should stay at cart_items.unit_price, that's literally one of the points I made earlier.
 
     ### How do the tests work
     After yet more research, this is how everything is going to work.
@@ -143,17 +143,17 @@ The task says "use your best judgement" for any missing context. Therefore, ther
 
          `DROP DATABASE` with `FORCE` disconnects anything still connected, including leftover connections, and deletes shop_test. Then it's created empty.
 
-         `quickstart.sql` is split. This is because psycopg runs one statement per call, and that file creates users, products, carts, cart_items, and user_payment_methods, and it also iserts Alice. It DOES NOT create payments.
+         `quickstart.sql` is split. This is because psycopg runs one statement per call, and that file creates users, products, carts, cart_items, and user_payment_methods, and it also inserts Alice. It DOES NOT create payments.
 
-         Alembic is then ran, its `upgrade head` invoked against `shop_test`. The URL is set on the config before upgrade is ran, and `env.py` only uses the default DATABASE_URL when that option isempty, so the migration goes to the test database, and not the main one. "%" is doubled because as stated in previous logs, Alembic treats % as a placeholder.
+         Alembic is then ran, its `upgrade head` invoked against `shop_test`. The URL is set on the config before upgrade is ran, and `env.py` only uses the default DATABASE_URL when that option is empty, so the migration goes to the test database, and not the main one. "%" is doubled because as stated in previous logs, Alembic treats % as a placeholder.
     
-    2. `app` is a session scoped fixutre. It means the database is built once per pytest run, not once per test. `create_app` uses the TEST_DATABASE_URL, `TESTING: True` means Flask test client will raise unexpected exceptions instead of returning a 500 page. When the last test is finished, the session is removed, and the engine's connections are closed.
+    2. `app` is a session scoped fixture. It means the database is built once per pytest run, not once per test. `create_app` uses the TEST_DATABASE_URL, `TESTING: True` means Flask test client will raise unexpected exceptions instead of returning a 500 page. When the last test is finished, the session is removed, and the engine's connections are closed.
 
     3. `client` this is a fixture, which returns a Flask's test client, as per the [Flask docs](https://flask.palletsprojects.com/en/stable/testing/).
 
     4. `Shop` is there to build the rows the client needs. It's basically our seeding tool. There is an `expunge_all` call for payments, it detaches the rows with their values loaded, so when we read the payment status, we don't get a detached instance error.
 
-    5. `_commit` runs an insert inside an app context, commits and removes the session. `_read` does the same, but it doesn't commit. These methods open and lcose their own contexts, so the test client always gets a fresh session for the request.
+    5. `_commit` runs an insert inside an app context, commits and removes the session. `_read` does the same, but it doesn't commit. These methods open and close their own contexts, so the test client always gets a fresh session for the request.
 
     6. `shop`'s TRUNCATE empties every shop table, including Alice from quickstart.sql, and RESTART IDENTITY resets primary keys and such, basically all sequentially incrementing values to their starting one, usually 1. In other words, it's a reset so the tests don't contaminate each other. Alembic version isn't truncated, so the migration isn't ran over and over again.
 
@@ -178,6 +178,6 @@ Festina lente.
 5. ~~Add the Payment model and PaymentStatus enum to match what I wrote in Alembic.~~
 6. ~~Create a mock provider.~~
 7. ~~Add a payment service.~~
-8. ~~Add the enpoint. Parse the request, call the service, turn the result into an HTTP response with a proper status.~~
+8. ~~Add the endpoint. Parse the request, call the service, turn the result into an HTTP response with a proper status.~~
 9. ~~Add tests.~~
 10. Create a nice README.

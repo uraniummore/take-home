@@ -9,7 +9,7 @@ class ChargeResult:
     charge_id: str | None = None
     failure_reason: str | None = None
 
-# No need to use amount or curreny, they're here to document the same arguments as a real provider.
+# No need to use amount or currency, they're here to document the same arguments as a real provider.
 def charge(token: str, amount: Decimal, currency: str, idempotency_key: uuid.UUID) -> ChargeResult:
     if "decline" in token:
         return ChargeResult(succeeded=False, failure_reason="card_declined")
