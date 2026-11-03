@@ -2,7 +2,8 @@ import uuid
 
 from flask import Blueprint, jsonify, request
 
-from payments.service import PaymentError, start_payment
+from payments.errors import PaymentError
+from payments.service import start_payment
 from storage.db import db
 from storage.models import PaymentStatus
 

@@ -5,40 +5,17 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from payments.errors import (
+    CartEmptyError,
+    CartNotActiveError,
+    CartNotFoundError,
+    NoDefaultPaymentMethodError,
+    PaymentAlreadyExistsError,
+    PaymentMethodIdNotFoundError,
+    PaymentMethodNotOwnedError,
+)
 from payments.provider_mock import charge
 from storage.models import Cart, CartStatus, Payment, PaymentStatus, UserPaymentMethod
-
-
-class PaymentError(Exception):
-    pass
-
-
-class CartNotFoundError(PaymentError):
-    status_code = 404
-
-
-class CartNotActiveError(PaymentError):
-    status_code = 409
-
-
-class CartEmptyError(PaymentError):
-    status_code = 422
-
-
-class PaymentMethodIdNotFoundError(PaymentError):
-    status_code = 404
-
-
-class PaymentMethodNotOwnedError(PaymentError):
-    status_code = 403
-
-
-class NoDefaultPaymentMethodError(PaymentError):
-    status_code = 422
-
-
-class PaymentAlreadyExistsError(PaymentError):
-    status_code = 409
 
 
 def start_payment(
@@ -65,28 +42,7 @@ def start_payment(
             if not cart.items:
                 raise CartEmptyError()
 
-            if payment_method_id is not None:
-                payment_method = session.get(
-                    UserPaymentMethod, payment_method_id)
-
-                if payment_method is None:
-                    raise PaymentMethodIdNotFoundError()
-
-                if payment_method.user_id != cart.user_id:
-                    raise PaymentMethodNotOwnedError()
-            else:
-                payment_method_stmt = (
-                    select(UserPaymentMethod)
-                    .where(UserPaymentMethod.user_id == cart.user_id)
-                    .where(UserPaymentMethod.is_default.is_(True))
-                    .limit(1)
-                )
-
-                payment_method = session.execute(
-                    payment_method_stmt).scalars().first()
-
-                if payment_method is None:
-                    raise NoDefaultPaymentMethodError()
+            payment_method = _get_payment_method(session, cart, payment_method_id)
 
             amount = sum(
                 (item.quantity * item.unit_price for item in cart.items), Decimal("0"))
@@ -111,7 +67,6 @@ def start_payment(
             raise PaymentAlreadyExistsError from error
         raise
 
-
     charge_result = charge(provider_token, amount, currency, payment_id)
 
     with session.begin():
@@ -127,6 +82,30 @@ def start_payment(
             payment.failure_reason = charge_result.failure_reason
 
     return payment
+
+
+def _get_payment_method(
+    session: Session,
+    cart: Cart,
+    payment_method_id: uuid.UUID | None,
+) -> UserPaymentMethod:
+    if payment_method_id is not None:
+        payment_method = session.get(UserPaymentMethod, payment_method_id)
+        if payment_method is None:
+            raise PaymentMethodIdNotFoundError()
+        if payment_method.user_id != cart.user_id:
+            raise PaymentMethodNotOwnedError()
+        return payment_method
+
+    payment_method = session.scalars(
+        select(UserPaymentMethod)
+        .where(UserPaymentMethod.user_id == cart.user_id)
+        .where(UserPaymentMethod.is_default.is_(True))
+        .limit(1)
+    ).first()
+    if payment_method is None:
+        raise NoDefaultPaymentMethodError()
+    return payment_method
 
 
 def _is_duplicate_payment(error: IntegrityError) -> bool:
