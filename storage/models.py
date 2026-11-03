@@ -15,6 +15,12 @@ class CartStatus(StrEnum):
     ABANDONED = "abandoned"
 
 
+class PaymentStatus(StrEnum):
+    PENDING = "pending"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+
+
 class Cart(db.Model):
     __tablename__ = "carts"
 
@@ -51,3 +57,21 @@ class UserPaymentMethod(db.Model):
     last_four: Mapped[str | None] = mapped_column(CHAR(4))
     is_default: Mapped[bool]
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class Payment(db.Model):
+    __tablename__ = "payments"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    cart_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("carts.id"))
+    payment_method_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("user_payment_methods.id"))
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    currency: Mapped[str] = mapped_column(CHAR(3))
+    status: Mapped[str]
+    provider_charge_id: Mapped[str | None]
+    failure_reason: Mapped[str | None]
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), onupdate=func.now()
+    )

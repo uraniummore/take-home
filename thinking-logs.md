@@ -82,6 +82,10 @@ The task says "use your best judgement" for any missing context. Therefore, ther
 
     Researching the topic, I found out that the obvious check to "look for an active payment, and add one if there isn't any" breaks when several requests arrive together. Both could find no active payment, because neither inserted anything yet, so both insert their rows, and the customer is charged twice.
 
+7. I noticed the NUMERIC(12, 2) priЁces on products. That means in theory we couldn't charge a cart with a total larger than ~9.9 billion. However, in practice, no card providers allow charges of such scale anyway, with most of them being capped at thousands to tens of thousands of USD. I'm using the same constraint for my Payments table. 
+
+I did a bit of research, and found out that if I ever need to change this, a one-lin migration, such as `ALTER COLUMN amount TYPE NUMERIC(14, 2)` fixes it, since widening a `NUMERIC` doesn't lose data.
+
 ## Some planning for personal clarity.
 Festina lente.
 
@@ -90,7 +94,7 @@ Festina lente.
 2. ~~Add the DB support and load the quickstart DB into it.~~
 3. ~~Add Alembic.~~
 4. ~~Design the payments table and migrate it into the DB~~.
-5. Add the Payment model and PaymentStatus enum to match what I wrote in Alembic.
+5. ~~Add the Payment model and PaymentStatus enum to match what I wrote in Alembic.~~
 6. Create a mock provider.
 7. Add a payment service.
 8. Add the enpoint. Parse the request, call the service, turn the result into an HTTP response with a proper status.
