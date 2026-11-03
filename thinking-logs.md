@@ -104,6 +104,69 @@ The task says "use your best judgement" for any missing context. Therefore, ther
 
 13. Now that I'm done with the payment service, it is time to create the endpoint. First of all, since the app has neither authentication nor authorization, the endpoint is going to assume that the cart's owner is our user, and therefore there is no `user_id` in the parameters. What I do need is `cart_id`, which is the cart to charge. It is a mandatory parameter, and if it's missing, or is an invalid UUID value, that's a 400. We also have a `payment_method_id`, which isn't required (because the user has a default card, or rather - could have it), although it will still return a 400, if it's an invalid UUID.
 
+    ### So what codes am I going to return and why?
+
+    201 Created. A payment row was created and the card was charged. The body is that payment, including provider_charge_id.
+
+    402 Payment Required. The request was valid and a payment row was saved, but the provider declined the card. The body includes failure_reason. 402 is the status Stripe uses for a refused card, and it lets the client show "try another card" without inspecting the body. The cart stays active, so the same request can be repeated with a different card.
+
+    400 Bad Request. The request itself is malformed: no JSON, no cart_id, or a value that is not a UUID. Retrying the same bytes will fail again. The client has to change the request.
+
+    404 Not Found. The UUID is well formed, and no row has that id. This covers an unknown cart and an unknown card.
+
+    403 Forbidden. The card exists, and it belongs to a different user. The caller is not allowed to charge it.
+
+    409 Conflict. The request is well formed, and it conflicts with the cart's current state. The cart is already checked_out or abandoned, or a pending or succeeded payment already exists. The same request can succeed later only if that state changes, which for a paid cart it will not.
+
+    422 Unprocessable Content. The JSON and the UUIDs are valid, and the cart exists, but there is nothing to charge. The cart has no items, or the user has no default card and did not send one. Changing the request, or adding items, is what makes it succeed.
+
+    500 is for anything else, including a cart whose total is 0.00. That fails the database check and is not a duplicate payment, so it is not turned into a 409.
+
+14. What test suite should I use? I dug around some, and realised that unittest wouldn't cut it here, or rather it wouldn't be the best solution. Its setup lives in setUp and setUpClass, and it gets sketchy when a test needs both a migrated Postgres, and a test client. Also `parametrize`. Without it, I'd have to repeat myself, copying the same test with different parametres, or write crutches inside the test itself, with loops and whatnot.
+
+    So exactly what scenarios should I test for? We have: every exception I added, a successful payment, a failed payment, and... I think that's about it, honestly.
+
+    Wait, no there's more.
+    
+    Tests should also have their own database, and load `quickstart.sql` into it, so it's independed, and also covers the fact that the seed itself loads, and migrations work. I shall build each test's own user, cart, items and the payment token.
+
+    Also, I need to test when the request is rejected before the service runs, and no payment row is created. Missing body, body that isn't JSON, missing cart_id, weird payment_id, the works. That's probably it.
+
+    Wait, no - if I change products.price before paying, the amount charged should stay at cart_items.unit_rice, that's literally one of the points I made earlier.
+
+    ### How do the tests work
+    After yet more research, this is how everything is going to work.
+
+    1. `_prepare_database` runs once, it rebuilds `shop_test` from ground up.
+         
+         It connects to the main database because `CREATE DATABASE` cannot run while you are connected to the database you are creating, and `autocommit=True` is required for the same reason of `CREATE DATABASE` not being possible inside a transaction in Postgres.
+
+         `DROP DATABASE` with `FORCE` disconnects anything still connected, including leftover connections, and deletes shop_test. Then it's created empty.
+
+         `quickstart.sql` is split. This is because psycopg runs one statement per call, and that file creates users, products, carts, cart_items, and user_payment_methods, and it also iserts Alice. It DOES NOT create payments.
+
+         Alembic is then ran, its `upgrade head` invoked against `shop_test`. The URL is set on the config before upgrade is ran, and `env.py` only uses the default DATABASE_URL when that option isempty, so the migration goes to the test database, and not the main one. "%" is doubled because as stated in previous logs, Alembic treats % as a placeholder.
+    
+    2. `app` is a session scoped fixutre. It means the database is built once per pytest run, not once per test. `create_app` uses the TEST_DATABASE_URL, `TESTING: True` means Flask test client will raise unexpected exceptions instead of returning a 500 page. When the last test is finished, the session is removed, and the engine's connections are closed.
+
+    3. `client` this is a fixture, which returns a Flask's test client, as per the [Flask docs](https://flask.palletsprojects.com/en/stable/testing/).
+
+    4. `Shop` is there to build the rows the client needs. It's basically our seeding tool. There is an `expunge_all` call for payments, it detaches the rows with their values loaded, so when we read the payment status, we don't get a detached instance error.
+
+    5. `_commit` runs an insert inside an app context, commits and removes the session. `_read` does the same, but it doesn't commit. These methods open and lcose their own contexts, so the test client always gets a fresh session for the request.
+
+    6. `shop`'s TRUNCATE empties every shop table, including Alice from quickstart.sql, and RESTART IDENTITY resets primary keys and such, basically all sequentially incrementing values to their starting one, usually 1. In other words, it's a reset so the tests don't contaminate each other. Alembic version isn't truncated, so the migration isn't ran over and over again.
+
+    7. **Misc things.**
+
+        I did a little bit of digging and found out Stripe puts `tok_` before a card token, so the seed data follows it. Same with Alice's card.
+
+        `@pytest.mark.parametrize` allows you to run a single test function multiple times using different sets of data. Having used unittest most of my time before, I find this a very nifty tool.
+
+        During testing I found a bug: the failed constraint for non-zero amount would be picked up and returned as a PaymentAlreadyExistsError. So I added a check for that, and also tested it just in case.
+
+    
+
 ## Some planning for personal clarity.
 Festina lente.
 
@@ -116,5 +179,5 @@ Festina lente.
 6. ~~Create a mock provider.~~
 7. ~~Add a payment service.~~
 8. ~~Add the enpoint. Parse the request, call the service, turn the result into an HTTP response with a proper status.~~
-9. Add tests.
+9. ~~Add tests.~~
 10. Create a nice README.
