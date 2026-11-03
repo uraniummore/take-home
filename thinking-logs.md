@@ -102,6 +102,8 @@ The task says "use your best judgement" for any missing context. Therefore, ther
 
 12. I made the payment service throw exceptions when something goes wrong, because that immediately rolls back the session, and nothing unexpected gets writted into the DB.
 
+13. Now that I'm done with the payment service, it is time to create the endpoint. First of all, since the app has neither authentication nor authorization, the endpoint is going to assume that the cart's owner is our user, and therefore there is no `user_id` in the parameters. What I do need is `cart_id`, which is the cart to charge. It is a mandatory parameter, and if it's missing, or is an invalid UUID value, that's a 400. We also have a `payment_method_id`, which isn't required (because the user has a default card, or rather - could have it), although it will still return a 400, if it's an invalid UUID.
+
 ## Some planning for personal clarity.
 Festina lente.
 
@@ -113,6 +115,6 @@ Festina lente.
 5. ~~Add the Payment model and PaymentStatus enum to match what I wrote in Alembic.~~
 6. ~~Create a mock provider.~~
 7. ~~Add a payment service.~~
-8. Add the enpoint. Parse the request, call the service, turn the result into an HTTP response with a proper status.
+8. ~~Add the enpoint. Parse the request, call the service, turn the result into an HTTP response with a proper status.~~
 9. Add tests.
 10. Create a nice README.

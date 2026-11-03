@@ -1,7 +1,7 @@
-import uuid
 from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
+import uuid
 
 from sqlalchemy import CHAR, DateTime, ForeignKey, Numeric, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -71,7 +71,9 @@ class Payment(db.Model):
     status: Mapped[str]
     provider_charge_id: Mapped[str | None]
     failure_reason: Mapped[str | None]
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), onupdate=func.now()
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
