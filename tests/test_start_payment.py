@@ -4,7 +4,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy.exc import IntegrityError
 
-URL = "/payments/start-payment"
+URL = "/payments"
 
 
 def _post(client, payload):

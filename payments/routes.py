@@ -9,7 +9,7 @@ from storage.models import PaymentStatus
 payments_bp = Blueprint("payments", __name__)
 
 
-@payments_bp.route("/start-payment", methods=["POST"])
+@payments_bp.post("")
 def start_payment_route():
     # silent=True to avoid raising an error if the request body is not valid JSON.
     request_data = request.get_json(silent=True)
