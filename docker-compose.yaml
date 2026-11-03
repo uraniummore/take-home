@@ -1,3 +1,12 @@
+x-app-base: &app-base
+  build: .
+  environment:
+    DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    TEST_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}_test
+    FLASK_SKIP_DOTENV: "1"
+  volumes:
+    - .:/app
+
 services:
   db:
     image: postgres:16
@@ -6,6 +15,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
     volumes:
+      # From: https://docs.docker.com/guides/postgresql/
+      # Runs on first start only (empty volume); reset with: docker compose down -v
       - ./quickstart.sql:/docker-entrypoint-initdb.d/01-quickstart.sql:ro
       - take-home-postgres:/var/lib/postgresql/data
     healthcheck:
@@ -13,21 +24,20 @@ services:
       interval: 2s
       retries: 15
 
-  app:
-    build: .
-    environment:
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
-      TEST_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}_test
-      FLASK_SKIP_DOTENV: "1"
-    volumes:
-      - .:/app
-    ports:
-      - "5000:5000"
+  migrate:
+    <<: *app-base
     depends_on:
       db:
         condition: service_healthy
-    # TODO: Uncomment this when I add migrations.
-    # command: sh -c "alembic upgrade head && flask --app app run --host 0.0.0.0 --debug"
+    command: alembic upgrade head
+
+  app:
+    <<: *app-base
+    ports:
+      - "5000:5000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
     command: flask --app app run --host 0.0.0.0 --debug
 
 volumes:

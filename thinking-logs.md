@@ -56,14 +56,43 @@ The task says "use your best judgement" for any missing context. Therefore, ther
     - Send an idempotency key (HTTP Idempotency Key header), which is a unique ID for the attempt. Provider sees the key twice, returns the first result instead of charging again. I will use my payment's ID for this.
     - My database will reject a second active payment for the same card. For safety.
 
+6. Designing the payments table.
+
+    So I'm thinking: exactly what columns does my table need, in order to do what I wrote down in entry №5?
+
+    So far, the table looks like this (I might update it later):
+
+    ```
+    id: UUID - The primary key. It's what I'll send as the idempotency key to the provider.
+    card_id - This is the cart I am charging for.
+    payment_method_id - This is the card I am charging.
+    amount: NUMERIC(12,2), CHECK > 0 - How much I need to charge.
+    curreny: CHAR(3) - The currency of the amount.
+    status - How my payment went: pending, succeeded or failed, enforced with a CHEK constraint.
+    provider_charge_id - The provider's charge ID, it's empty until the charge succeeds.
+    failure_reason - Why the payment failed, for instance "card_expired".
+    created_at, updated_at - Timestamps, as per base schema.
+
+    Constraint for the status.
+    Constraint for amount.
+    ```
+    Also, **unique**, **partial** index on cart_id. This will mean no two rows may have the same cart_id. Postgres checks this on each insert, so a second row for the same cart will fail with a unique violation error. Making it partial (`WHERE status IN`) will limit the index to only the rows that match it.
+
+    With that logic, any number of failed charges are allowed for a cart. However, at most one pending or succeeded charge can exist at once, so if it's being charged or was already charged, it cannot be charged again.
+
+    Researching the topic, I found out that the obvious check to "look for an active payment, and add one if there isn't any" breaks when several requests arrive together. Both could find no active payment, because neither inserted anything yet, so both insert their rows, and the customer is charged twice.
+
 ## Some planning for personal clarity.
 Festina lente.
 
-0. Containerise everything. We are working in Docker. "Works on my machine" is unacceptable.
-1. Create a basic Flask project.
-2. Add the DB support and load the quickstart DB into it.
-3. Add Alembic.
-4. Design the payments table and migrate it into the DB.
-
-
-
+0. ~~Containerise everything. We are working in Docker. "Works on my machine" is unacceptable.~~
+1. ~~Create a basic Flask project.~~
+2. ~~Add the DB support and load the quickstart DB into it.~~
+3. ~~Add Alembic.~~
+4. ~~Design the payments table and migrate it into the DB~~.
+5. Add the Payment model and PaymentStatus enum to match what I wrote in Alembic.
+6. Create a mock provider.
+7. Add a payment service.
+8. Add the enpoint. Parse the request, call the service, turn the result into an HTTP response with a proper status.
+9. Add tests.
+10. Create a nice README.
