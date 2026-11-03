@@ -84,7 +84,23 @@ The task says "use your best judgement" for any missing context. Therefore, ther
 
 7. I noticed the NUMERIC(12, 2) priЁces on products. That means in theory we couldn't charge a cart with a total larger than ~9.9 billion. However, in practice, no card providers allow charges of such scale anyway, with most of them being capped at thousands to tens of thousands of USD. I'm using the same constraint for my Payments table. 
 
-I did a bit of research, and found out that if I ever need to change this, a one-lin migration, such as `ALTER COLUMN amount TYPE NUMERIC(14, 2)` fixes it, since widening a `NUMERIC` doesn't lose data.
+    I did a bit of research, and found out that if I ever need to change this, a one-lin migration, such as `ALTER COLUMN amount TYPE NUMERIC(14, 2)` fixes it, since widening a `NUMERIC` doesn't lose data.
+
+8. So it's finally time to make a mock provider. What I'm thinking here: it's in the name - "mock". I'm guessing I'll just literally make a "provider" endpoint, or even just a function, which will return some response-like data for my service to work with.
+
+    It'll do what is written in [TASK.md](TASK.md): fail or succeed. Howver, there's this third scenario, where the provider didn't answer due to unknown reasons. Handling that means the payment is left pending, and we'd check later. This is out of scope here.
+
+    Same goes for refunds, 3D secure, and partial captures.
+
+9. I shouldn't just add amounts up. In Python, `0.1 + 0.2 = 0.30000000000000004`. I will use `decimal.Decimal` instead.
+
+10. So when we're charging, the code doesn't check each product for its currency type. Why? It could be GBP for all we know, but I still should not query `products` at payment time. The `cart_items` stores `unit_price`, so a later price change doesn't change the charge, and `products.currency` can change for the same reason. Reading it during a payment could charge a snapshotted price in a different currency.
+
+    **Assumption I make**: The base schema doesn't store a currency on the cart item, and every sample product is USD, so I am going to treat the charge as USD. A mixed cart would be a real bug, and the schema allows it. Handling a cart, whose products are not all the same currency would mean loading `products` and comparing them, and that check lives in the service that adds items to the cart, not the one I am working on.
+
+11. `payments/service.py`, I am loading the default card with `limit(1)`, and `.scalars().first()`, because the current schema allows for multiple default cards.
+
+12. I made the payment service throw exceptions when something goes wrong, because that immediately rolls back the session, and nothing unexpected gets writted into the DB.
 
 ## Some planning for personal clarity.
 Festina lente.
@@ -95,8 +111,8 @@ Festina lente.
 3. ~~Add Alembic.~~
 4. ~~Design the payments table and migrate it into the DB~~.
 5. ~~Add the Payment model and PaymentStatus enum to match what I wrote in Alembic.~~
-6. Create a mock provider.
-7. Add a payment service.
+6. ~~Create a mock provider.~~
+7. ~~Add a payment service.~~
 8. Add the enpoint. Parse the request, call the service, turn the result into an HTTP response with a proper status.
 9. Add tests.
 10. Create a nice README.
