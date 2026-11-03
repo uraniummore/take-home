@@ -106,8 +106,11 @@ def start_payment(
             amount = payment.amount
             payment_id = payment.id
             currency = payment.currency
-    except IntegrityError as e:
-        raise PaymentAlreadyExistsError from e
+    except IntegrityError as error:
+        if _is_duplicate_payment(error):
+            raise PaymentAlreadyExistsError from error
+        raise
+
 
     charge_result = charge(provider_token, amount, currency, payment_id)
 
@@ -124,3 +127,11 @@ def start_payment(
             payment.failure_reason = charge_result.failure_reason
 
     return payment
+
+
+def _is_duplicate_payment(error: IntegrityError) -> bool:
+    """True only for the partial unique index, not for other constraint failures."""
+    original = getattr(error, "orig", None)
+    diagnostics = getattr(original, "diag", None)
+    constraint = getattr(diagnostics, "constraint_name", None)
+    return constraint == "uq_payments_cart_id_active"
