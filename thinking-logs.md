@@ -180,4 +180,4 @@ Festina lente.
 7. ~~Add a payment service.~~
 8. ~~Add the endpoint. Parse the request, call the service, turn the result into an HTTP response with a proper status.~~
 9. ~~Add tests.~~
-10. Create a nice README.
+10. ~~Create a nice README.~~
